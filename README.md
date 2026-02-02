@@ -22,6 +22,7 @@ Este repositorio incluye scripts Bash para gestionar una PKI básica y operacion
 - Permite:
   - Generar un par de claves (privada y pública).
   - Derivar la clave pública a partir de una clave privada existente.
+  - Crear solicitudes de firma de certificado (CSR).
   - Firmar archivos.
   - Verificar firmas.
   - Mostrar información de una firma (hash, tamaño y base64).
@@ -36,3 +37,4 @@ Este repositorio incluye scripts Bash para gestionar una PKI básica y operacion
 ## Notas
 - La clave pública siempre se deriva de la clave privada.
 - Las rutas de salida se solicitan al usuario en tiempo de ejecución.
+- La clave privada debe permanecer en posesión del usuario y no debe compartirse.

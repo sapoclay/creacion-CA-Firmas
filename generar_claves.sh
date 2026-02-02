@@ -12,6 +12,7 @@ NC='\033[0m'  # Sin color
 
 mostrar_titulo() {
   echo -e "${CYAN}Gestor de firma digital (RSA 4096)${NC}"  # Muestra el título del script.
+  echo -e "${YELLOW}Aviso:${NC} La clave privada debe permanecer en tu poder y no debe compartirse."  # Aviso de seguridad.
 }
 
 generar_claves() {
@@ -98,6 +99,20 @@ info_firma() {
   openssl base64 -in "$sig_path"  # Muestra la firma en base64.
 }
 
+crear_csr() {
+  read -e -p "Ruta de la clave privada (.key.pem): " key_path  # Solicita la clave privada.
+  read -e -p "Nombre común (CN): " cn  # Solicita el Common Name.
+  read -e -p "Ruta de salida del CSR (.csr.pem): " csr_path  # Solicita la ruta del CSR.
+
+  if [ -z "$key_path" ] || [ -z "$cn" ] || [ -z "$csr_path" ]; then  # Valida entradas.
+    echo -e "${RED}Debe indicar clave privada, CN y salida del CSR.${NC}"
+    return 1
+  fi
+
+  openssl req -new -key "$key_path" -subj "/CN=$cn" -out "$csr_path"  # Genera el CSR.
+  echo -e "${GREEN}CSR creado:${NC} $csr_path"  # Muestra la ruta del CSR.
+}
+
 menu() {
   while true; do
     echo -e "${BLUE}\n--- MENÚ ---${NC}"
@@ -106,6 +121,7 @@ menu() {
     echo -e "${YELLOW}3.${NC} Firmar archivo"
     echo -e "${YELLOW}4.${NC} Verificar firma"
     echo -e "${YELLOW}5.${NC} Ver información de la firma"
+    echo -e "${YELLOW}6.${NC} Crear CSR"
     echo -e "${YELLOW}0.${NC} Salir"
     read -p "Opción> " opcion
 
@@ -115,6 +131,7 @@ menu() {
       3) firmar_archivo ;;
       4) verificar_firma ;;
       5) info_firma ;;
+      6) crear_csr ;;
       0) exit 0 ;;
       *) echo -e "${RED}Opción no reconocida.${NC}" ;;
     esac
