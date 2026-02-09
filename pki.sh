@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#PKI_PATH="/home/kali/Desktop/PKI"
-#CONFIG="$PKI_PATH/openssl.cnf"
+PKI_PATH="$HOME/Desktop/PKI"
+CONFIG="$PKI_PATH/openssl.cnf"
 
 # Colores para la salida
 RED='\033[0;31m'
@@ -74,9 +74,24 @@ __CONFIG_END__
     -sha256 -days 3650 -out $PKI_PATH/certs/ca.cert.pem
 }
 
+# Muestra el comando que se ejecutara
+mostrar_comando() {
+  echo -e "${BLUE}Comando:${NC} $*"
+}
+
+# Comprueba si la infraestructura de CA existe
+requiere_ca() {
+  if [ ! -f "$PKI_PATH/certs/ca.cert.pem" ] || [ ! -f "$PKI_PATH/private/ca.key.pem" ] || [ ! -f "$PKI_PATH/openssl.cnf" ]; then
+    echo -e "${RED}La CA no esta creada. Usa la opcion 1 para crearla.${NC}"
+    return 1
+  fi
+  return 0
+}
+
 # Expedición de certificado a partir de un CSR
 expedir_certificado() {
   read -e -p "Ruta del fichero CSR: " csr
+  mostrar_comando "openssl ca -config $PKI_PATH/openssl.cnf -in \"$csr\" -out certificado.pem"
   openssl ca -config $PKI_PATH/openssl.cnf -in "$csr" -out certificado.pem
   echo -e "${GREEN}Certificado creado correctamente con el archivo${NC}"
   echo ""
@@ -86,6 +101,7 @@ expedir_certificado() {
 listar_certificados() {
   echo ""
   echo -e "---${YELLOW}Listado de certificados:${NC}---"
+  mostrar_comando "cat $PKI_PATH/index.txt"
   cat $PKI_PATH/index.txt
   echo ""
 }
@@ -93,8 +109,66 @@ listar_certificados() {
 # Revocación de un certificados
 revocar_certificado() {
   select serial in $(awk '$1=="V" {print $3}' $PKI_PATH/index.txt) ; do
+    mostrar_comando "openssl ca -revoke $PKI_PATH/newcerts/$serial.pem -config $PKI_PATH/openssl.cnf"
     openssl ca -revoke $PKI_PATH/newcerts/$serial.pem -config $PKI_PATH/openssl.cnf
   done
+}
+
+# Verifica la firma de un certificado con el certificado del emisor
+verificar_firma_certificado() {
+  read -e -p "Ruta del certificado (.pem): " cert_path
+  read -e -p "Ruta de la firma (.sig): " sig_path
+  read -e -p "Ruta del certificado del emisor (.pem): " issuer_cert
+
+  if [ -z "$cert_path" ] || [ -z "$sig_path" ] || [ -z "$issuer_cert" ]; then
+    echo -e "${RED}Debe indicar certificado, firma y certificado del emisor.${NC}"
+    return 1
+  fi
+
+  tmp_pub=$(mktemp)
+  trap 'rm -f "$tmp_pub"' RETURN
+
+  mostrar_comando "openssl x509 -in \"$issuer_cert\" -pubkey -noout > \"$tmp_pub\""
+  openssl x509 -in "$issuer_cert" -pubkey -noout > "$tmp_pub"
+
+  mostrar_comando "openssl dgst -sha256 -verify \"$tmp_pub\" -signature \"$sig_path\" \"$cert_path\""
+  if openssl dgst -sha256 -verify "$tmp_pub" -signature "$sig_path" "$cert_path"; then
+    echo -e "${GREEN}Firma valida.${NC}"
+  else
+    echo -e "${RED}Firma invalida.${NC}"
+  fi
+}
+
+# Verifica la firma de un certificado con una clave publica
+verificar_firma_certificado_pub() {
+  read -e -p "Ruta del certificado (.pem): " cert_path
+  read -e -p "Ruta de la firma (.sig): " sig_path
+  read -e -p "Ruta de la clave publica (.pub.pem): " pub_path
+
+  if [ -z "$cert_path" ] || [ -z "$sig_path" ] || [ -z "$pub_path" ]; then
+    echo -e "${RED}Debe indicar certificado, firma y clave publica.${NC}"
+    return 1
+  fi
+
+  mostrar_comando "openssl dgst -sha256 -verify \"$pub_path\" -signature \"$sig_path\" \"$cert_path\""
+  if openssl dgst -sha256 -verify "$pub_path" -signature "$sig_path" "$cert_path"; then
+    echo -e "${GREEN}Firma valida.${NC}"
+  else
+    echo -e "${RED}Firma invalida.${NC}"
+  fi
+}
+
+# Muestra toda la informacion de un certificado
+ver_info_certificado() {
+  read -e -p "Ruta del certificado (.pem): " cert_path
+
+  if [ -z "$cert_path" ]; then
+    echo -e "${RED}Debe indicar la ruta del certificado.${NC}"
+    return 1
+  fi
+
+  mostrar_comando "openssl x509 -in \"$cert_path\" -noout -text"
+  openssl x509 -in "$cert_path" -noout -text
 }
 
 # Comprobamos si la variable de entorno PKI_PATH está definida
@@ -103,27 +177,33 @@ if [ -z "$PKI_PATH" ] ; then
   exit -1
 fi
 
-# Si no existe el directorio referido por $PKI_PATH, procedemos a crear la infraestructura
-if [ ! -d "$PKI_PATH" ] ; then
-  crear_infraestructura
-fi
-
 # Bucle sin fin para mostrar el menú de opciones
 while true ; do
+  if [ ! -f "$PKI_PATH/certs/ca.cert.pem" ]; then
+    echo -e "${YELLOW}Aviso:${NC} La CA aun no esta creada. Usa la opcion 1 para crearla."
+  fi
   echo -e "---${CYAN}MENÚ SIN GLUTEN${NC}---"
   cat << __FIN_MENU__
-1. Expedir certificado
-2. Listar certificados
-3. Revocar certificado
+1. Crear infraestructura de CA
+2. Expedir certificado
+3. Listar certificados
+4. Revocar certificado
+5. Verificar firma de certificado (con emisor)
+6. Ver informacion de certificado
+7. Verificar firma de certificado (con clave publica)
 0. Salir
 __FIN_MENU__
 
   read -p "Opción> " opcion
 
   case $opcion in
-    1) expedir_certificado ;;
-    2) listar_certificados ;;
-    3) revocar_certificado ;;
+    1) crear_infraestructura ;;
+    2) requiere_ca && expedir_certificado ;;
+    3) requiere_ca && listar_certificados ;;
+    4) requiere_ca && revocar_certificado ;;
+    5) verificar_firma_certificado ;;
+    6) ver_info_certificado ;;
+    7) verificar_firma_certificado_pub ;;
     0) exit ;;
     *) echo -e "${RED}Opción no reconocida.${NC}" ;;
   esac
